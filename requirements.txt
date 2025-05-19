@@ -16,6 +16,7 @@ colorzero==2.0
 getrpimodel==0.1.26
 gpio==1.0.0
 gpiozero==2.0.1
+grafana-client==4.0.0
 idna==3.10
 influxdb-client==1.38.0
 lgpio==0.2.2.0
