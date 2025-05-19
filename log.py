@@ -83,7 +83,7 @@ try:
             humidity = sensor.relative_humidity
             
             # Read CO2
-            co2_data = mh_z19.read()
+            co2_data = mh_z19.read(serial_console_untouched=True)
             co2 = co2_data['co2']
             
             # Print readings
