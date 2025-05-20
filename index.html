@@ -52,29 +52,23 @@
     <div class="current-values">
         <div class="value-card">
             <h3>温度</h3>
-            <div class="value" id="current-temp">--</div>
+            <div class="value" id="temperature">--</div>
             <div class="unit">°C</div>
         </div>
         <div class="value-card">
             <h3>湿度</h3>
-            <div class="value" id="current-humidity">--</div>
+            <div class="value" id="humidity">--</div>
             <div class="unit">%</div>
         </div>
         <div class="value-card">
             <h3>CO2</h3>
-            <div class="value" id="current-co2">--</div>
+            <div class="value" id="co2">--</div>
             <div class="unit">ppm</div>
         </div>
     </div>
 
     <div class="chart-container">
-        <canvas id="tempChart"></canvas>
-    </div>
-    <div class="chart-container">
-        <canvas id="humidityChart"></canvas>
-    </div>
-    <div class="chart-container">
-        <canvas id="co2Chart"></canvas>
+        <canvas id="sensorChart"></canvas>
     </div>
 
     <script src="app.js"></script>
