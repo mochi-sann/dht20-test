@@ -106,7 +106,7 @@ def get_history():
             SELECT temperature, humidity, co2, timestamp
             FROM sensor_readings
             ORDER BY timestamp DESC
-            LIMIT 100
+            LIMIT 1000
         ''')
         rows = c.fetchall()
         data = [{
