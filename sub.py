@@ -3,12 +3,14 @@ import board
 import busio
 import adafruit_ahtx0
 import mh_z19
-import asyncio
-import websockets
 import json
 from datetime import datetime
 import sqlite3
 import os
+from flask import Flask, jsonify, send_from_directory
+import threading
+
+app = Flask(__name__)
 
 # データベースの初期化
 def init_db():
@@ -40,6 +42,77 @@ def save_to_db(conn, temperature, humidity, co2):
         VALUES (?, ?, ?)
     ''', (temperature, humidity, co2))
     conn.commit()
+
+# Flaskルート
+@app.route('/')
+def index():
+    return send_from_directory('.', 'index.html')
+
+@app.route('/app.js')
+def app_js():
+    return send_from_directory('.', 'app.js')
+
+@app.route('/api/latest')
+def get_latest():
+    c = db_conn.cursor()
+    c.execute('''
+        SELECT temperature, humidity, co2, timestamp
+        FROM sensor_readings
+        ORDER BY timestamp DESC
+        LIMIT 1
+    ''')
+    row = c.fetchone()
+    if row:
+        return jsonify({
+            'temperature': row[0],
+            'humidity': row[1],
+            'co2': row[2],
+            'timestamp': row[3]
+        })
+    return jsonify({'error': 'No data available'}), 404
+
+@app.route('/api/history')
+def get_history():
+    c = db_conn.cursor()
+    c.execute('''
+        SELECT temperature, humidity, co2, timestamp
+        FROM sensor_readings
+        ORDER BY timestamp DESC
+        LIMIT 100
+    ''')
+    rows = c.fetchall()
+    data = [{
+        'temperature': row[0],
+        'humidity': row[1],
+        'co2': row[2],
+        'timestamp': row[3]
+    } for row in rows]
+    return jsonify(data)
+
+# センサーデータを読み取る関数
+def read_sensor_data():
+    while True:
+        try:
+            # センサーデータを読み取る
+            temperature = sensor.temperature
+            humidity = sensor.relative_humidity
+            co2_data = mh_z19.read(serial_console_untouched=True)
+            co2 = co2_data['co2']
+
+            # データベースに保存
+            save_to_db(db_conn, temperature, humidity, co2)
+
+            # コンソールに出力
+            print(f"Temperature: {temperature:.2f} °C")
+            print(f"Humidity: {humidity:.2f} %")
+            print(f"CO2: {co2} ppm")
+            print("------------------------")
+
+        except Exception as e:
+            print(f"Error reading sensor: {e}")
+            print("Trying to continue...")
+
+        time.sleep(2)
 
 # Better error handling and initialization for AHT sensor
 try:
@@ -82,87 +155,14 @@ try:
                 print("All initialization attempts failed.")
                 raise
 
-    # WebSocket接続を保持するセット
-    connected_clients = set()
+    # センサーデータ読み取りスレッドを開始
+    sensor_thread = threading.Thread(target=read_sensor_data)
+    sensor_thread.daemon = True
+    sensor_thread.start()
 
-    # WebSocketサーバーのハンドラ
-    async def websocket_handler(websocket, path):
-        connected_clients.add(websocket)
-        try:
-            # 接続時に最新のデータを送信
-            c = db_conn.cursor()
-            c.execute('''
-                SELECT temperature, humidity, co2, timestamp
-                FROM sensor_readings
-                ORDER BY timestamp DESC
-                LIMIT 100
-            ''')
-            historical_data = c.fetchall()
-            
-            # データを逆順にして時系列順に
-            for row in reversed(historical_data):
-                data = {
-                    'temperature': row[0],
-                    'humidity': row[1],
-                    'co2': row[2],
-                    'timestamp': row[3]
-                }
-                await websocket.send(json.dumps(data))
-            
-            async for message in websocket:
-                # クライアントからのメッセージを処理（必要な場合）
-                pass
-        finally:
-            connected_clients.remove(websocket)
-
-    # センサーデータを送信する関数
-    async def send_sensor_data():
-        while True:
-            try:
-                # センサーデータを読み取る
-                temperature = sensor.temperature
-                humidity = sensor.relative_humidity
-                co2_data = mh_z19.read(serial_console_untouched=True)
-                co2 = co2_data['co2']
-
-                # データベースに保存
-                save_to_db(db_conn, temperature, humidity, co2)
-
-                # データをJSON形式に変換
-                data = {
-                    'temperature': temperature,
-                    'humidity': humidity,
-                    'co2': co2,
-                    'timestamp': datetime.now().isoformat()
-                }
-
-                # 接続中の全クライアントにデータを送信
-                if connected_clients:
-                    websockets.broadcast(connected_clients, json.dumps(data))
-
-                # コンソールに出力
-                print(f"Temperature: {temperature:.2f} °C")
-                print(f"Humidity: {humidity:.2f} %")
-                print(f"CO2: {co2} ppm")
-                print("------------------------")
-
-            except Exception as e:
-                print(f"Error reading sensor: {e}")
-                print("Trying to continue...")
-
-            await asyncio.sleep(2)
-
-    # メインループ
-    async def main():
-        # WebSocketサーバーを起動
-        server = await websockets.serve(websocket_handler, "localhost", 8765)
-        print("WebSocket server started on ws://localhost:8765")
-
-        # センサーデータ送信タスクを開始
-        await send_sensor_data()
-
-    # イベントループを実行
-    asyncio.run(main())
+    # Flaskサーバーを起動
+    print("Starting Flask server...")
+    app.run(host='0.0.0.0', port=5000)
 
 except KeyboardInterrupt:
     print("Exiting program by user request...")

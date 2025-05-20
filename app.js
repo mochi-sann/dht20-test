@@ -115,24 +115,32 @@ function updateCharts(data) {
     co2Chart.update();
 }
 
-// WebSocket接続
-const ws = new WebSocket('ws://raspberrypi1.local:8765');
+// 過去のデータを取得
+async function loadHistoricalData() {
+    try {
+        const response = await fetch('/api/history');
+        const data = await response.json();
+        
+        // データを時系列順に並び替え
+        data.reverse().forEach(updateCharts);
+    } catch (error) {
+        console.error('Error loading historical data:', error);
+    }
+}
 
-// WebSocketイベントハンドラ
-ws.onmessage = function(event) {
-    const data = JSON.parse(event.data);
-    updateCharts(data);
-};
+// 最新のデータを定期的に取得
+async function fetchLatestData() {
+    try {
+        const response = await fetch('/api/latest');
+        const data = await response.json();
+        updateCharts(data);
+    } catch (error) {
+        console.error('Error fetching latest data:', error);
+    }
+}
 
-ws.onerror = function(error) {
-    console.error('WebSocket error:', error);
-};
+// 初期データの読み込み
+loadHistoricalData();
 
-ws.onclose = function() {
-    console.log('WebSocket connection closed');
-    // 接続が切れた場合は5秒後に再接続を試みる
-    setTimeout(() => {
-        console.log('Attempting to reconnect...');
-        window.location.reload();
-    }, 5000);
-}; 
+// 2秒ごとに最新データを取得
+setInterval(fetchLatestData, 2000); 
