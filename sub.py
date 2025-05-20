@@ -14,30 +14,30 @@ import contextlib
 
 app = Flask(__name__)
 
+# データ保存用のキュー
+data_queue = Queue()
+
 # データベースの初期化
 def init_db():
     db_path = 'sensor_data.db'
     is_new_db = not os.path.exists(db_path)
     
-    conn = sqlite3.connect(db_path, check_same_thread=False)
-    c = conn.cursor()
-    
-    if is_new_db:
-        c.execute('''
-            CREATE TABLE sensor_readings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                temperature REAL,
-                humidity REAL,
-                co2 INTEGER,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        conn.commit()
-    
-    return conn
+    with contextlib.closing(sqlite3.connect(db_path)) as conn:
+        c = conn.cursor()
+        if is_new_db:
+            c.execute('''
+                CREATE TABLE sensor_readings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    temperature REAL,
+                    humidity REAL,
+                    co2 INTEGER,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            conn.commit()
 
-# データベースにデータを保存
-def save_to_db(conn, temperature, humidity, co2):
+# データベースにデータを保存する関数
+def save_to_db(temperature, humidity, co2):
     with contextlib.closing(sqlite3.connect('sensor_data.db')) as conn:
         c = conn.cursor()
         c.execute('''
@@ -46,9 +46,26 @@ def save_to_db(conn, temperature, humidity, co2):
         ''', (temperature, humidity, co2))
         conn.commit()
 
+# データベースワーカースレッド
+def db_worker():
+    while True:
+        try:
+            # キューからデータを取得
+            data = data_queue.get()
+            if data is None:  # 終了シグナル
+                break
+            
+            # データベースに保存
+            save_to_db(data['temperature'], data['humidity'], data['co2'])
+            
+            # タスク完了をマーク
+            data_queue.task_done()
+        except Exception as e:
+            print(f"Database error: {e}")
+
 # データ取得用の関数
 def get_db_connection():
-    conn = sqlite3.connect('sensor_data.db', check_same_thread=False)
+    conn = sqlite3.connect('sensor_data.db')
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -63,8 +80,7 @@ def app_js():
 
 @app.route('/api/latest')
 def get_latest():
-    conn = get_db_connection()
-    try:
+    with contextlib.closing(get_db_connection()) as conn:
         c = conn.cursor()
         c.execute('''
             SELECT temperature, humidity, co2, timestamp
@@ -81,13 +97,10 @@ def get_latest():
                 'timestamp': row[3]
             })
         return jsonify({'error': 'No data available'}), 404
-    finally:
-        conn.close()
 
 @app.route('/api/history')
 def get_history():
-    conn = get_db_connection()
-    try:
+    with contextlib.closing(get_db_connection()) as conn:
         c = conn.cursor()
         c.execute('''
             SELECT temperature, humidity, co2, timestamp
@@ -103,8 +116,6 @@ def get_history():
             'timestamp': row[3]
         } for row in rows]
         return jsonify(data)
-    finally:
-        conn.close()
 
 # センサーデータを読み取る関数
 def read_sensor_data():
@@ -116,8 +127,12 @@ def read_sensor_data():
             co2_data = mh_z19.read(serial_console_untouched=True)
             co2 = co2_data['co2']
 
-            # データベースに保存
-            save_to_db(None, temperature, humidity, co2)
+            # データをキューに追加
+            data_queue.put({
+                'temperature': temperature,
+                'humidity': humidity,
+                'co2': co2
+            })
 
             # コンソールに出力
             print(f"Temperature: {temperature:.2f} °C")
@@ -135,6 +150,11 @@ def read_sensor_data():
 try:
     # データベースの初期化
     init_db()
+    
+    # データベースワーカースレッドを開始
+    db_thread = threading.Thread(target=db_worker)
+    db_thread.daemon = True
+    db_thread.start()
     
     # Initialize I2C
     print("Initializing I2C...")
@@ -183,6 +203,9 @@ try:
 
 except KeyboardInterrupt:
     print("Exiting program by user request...")
+    # データベースワーカーの終了
+    data_queue.put(None)
+    data_queue.join()
 except Exception as e:
     print(f"Fatal error: {e}")
     print("Troubleshooting tips:")
@@ -190,3 +213,6 @@ except Exception as e:
     print("2. Ensure sensor is receiving proper voltage (3.3V or 5V)")
     print("3. Check for I2C address conflicts")
     print("4. Try with pull-up resistors on SDA/SCL if not present")
+    # データベースワーカーの終了
+    data_queue.put(None)
+    data_queue.join()
