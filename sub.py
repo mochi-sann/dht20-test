@@ -9,6 +9,8 @@ import sqlite3
 import os
 from flask import Flask, jsonify, send_from_directory
 import threading
+from queue import Queue
+import contextlib
 
 app = Flask(__name__)
 
@@ -17,7 +19,7 @@ def init_db():
     db_path = 'sensor_data.db'
     is_new_db = not os.path.exists(db_path)
     
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, check_same_thread=False)
     c = conn.cursor()
     
     if is_new_db:
@@ -36,12 +38,19 @@ def init_db():
 
 # データベースにデータを保存
 def save_to_db(conn, temperature, humidity, co2):
-    c = conn.cursor()
-    c.execute('''
-        INSERT INTO sensor_readings (temperature, humidity, co2)
-        VALUES (?, ?, ?)
-    ''', (temperature, humidity, co2))
-    conn.commit()
+    with contextlib.closing(sqlite3.connect('sensor_data.db')) as conn:
+        c = conn.cursor()
+        c.execute('''
+            INSERT INTO sensor_readings (temperature, humidity, co2)
+            VALUES (?, ?, ?)
+        ''', (temperature, humidity, co2))
+        conn.commit()
+
+# データ取得用の関数
+def get_db_connection():
+    conn = sqlite3.connect('sensor_data.db', check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 # Flaskルート
 @app.route('/')
@@ -54,40 +63,48 @@ def app_js():
 
 @app.route('/api/latest')
 def get_latest():
-    c = db_conn.cursor()
-    c.execute('''
-        SELECT temperature, humidity, co2, timestamp
-        FROM sensor_readings
-        ORDER BY timestamp DESC
-        LIMIT 1
-    ''')
-    row = c.fetchone()
-    if row:
-        return jsonify({
+    conn = get_db_connection()
+    try:
+        c = conn.cursor()
+        c.execute('''
+            SELECT temperature, humidity, co2, timestamp
+            FROM sensor_readings
+            ORDER BY timestamp DESC
+            LIMIT 1
+        ''')
+        row = c.fetchone()
+        if row:
+            return jsonify({
+                'temperature': row[0],
+                'humidity': row[1],
+                'co2': row[2],
+                'timestamp': row[3]
+            })
+        return jsonify({'error': 'No data available'}), 404
+    finally:
+        conn.close()
+
+@app.route('/api/history')
+def get_history():
+    conn = get_db_connection()
+    try:
+        c = conn.cursor()
+        c.execute('''
+            SELECT temperature, humidity, co2, timestamp
+            FROM sensor_readings
+            ORDER BY timestamp DESC
+            LIMIT 100
+        ''')
+        rows = c.fetchall()
+        data = [{
             'temperature': row[0],
             'humidity': row[1],
             'co2': row[2],
             'timestamp': row[3]
-        })
-    return jsonify({'error': 'No data available'}), 404
-
-@app.route('/api/history')
-def get_history():
-    c = db_conn.cursor()
-    c.execute('''
-        SELECT temperature, humidity, co2, timestamp
-        FROM sensor_readings
-        ORDER BY timestamp DESC
-        LIMIT 100
-    ''')
-    rows = c.fetchall()
-    data = [{
-        'temperature': row[0],
-        'humidity': row[1],
-        'co2': row[2],
-        'timestamp': row[3]
-    } for row in rows]
-    return jsonify(data)
+        } for row in rows]
+        return jsonify(data)
+    finally:
+        conn.close()
 
 # センサーデータを読み取る関数
 def read_sensor_data():
@@ -100,7 +117,7 @@ def read_sensor_data():
             co2 = co2_data['co2']
 
             # データベースに保存
-            save_to_db(db_conn, temperature, humidity, co2)
+            save_to_db(None, temperature, humidity, co2)
 
             # コンソールに出力
             print(f"Temperature: {temperature:.2f} °C")
@@ -117,7 +134,7 @@ def read_sensor_data():
 # Better error handling and initialization for AHT sensor
 try:
     # データベースの初期化
-    db_conn = init_db()
+    init_db()
     
     # Initialize I2C
     print("Initializing I2C...")
@@ -166,7 +183,6 @@ try:
 
 except KeyboardInterrupt:
     print("Exiting program by user request...")
-    db_conn.close()
 except Exception as e:
     print(f"Fatal error: {e}")
     print("Troubleshooting tips:")
@@ -174,4 +190,3 @@ except Exception as e:
     print("2. Ensure sensor is receiving proper voltage (3.3V or 5V)")
     print("3. Check for I2C address conflicts")
     print("4. Try with pull-up resistors on SDA/SCL if not present")
-    db_conn.close()
