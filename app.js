@@ -1,29 +1,6 @@
-// チャートの設定
-const ctx = document.getElementById('sensorChart').getContext('2d');
-const chart = new Chart(ctx, {
+// チャートの共通設定
+const chartConfig = {
     type: 'line',
-    data: {
-        datasets: [
-            {
-                label: 'Temperature (°C)',
-                data: [],
-                borderColor: 'rgb(255, 99, 132)',
-                tension: 0.1
-            },
-            {
-                label: 'Humidity (%)',
-                data: [],
-                borderColor: 'rgb(54, 162, 235)',
-                tension: 0.1
-            },
-            {
-                label: 'CO2 (ppm)',
-                data: [],
-                borderColor: 'rgb(75, 192, 192)',
-                tension: 0.1
-            }
-        ]
-    },
     options: {
         responsive: true,
         scales: {
@@ -37,19 +14,67 @@ const chart = new Chart(ctx, {
                 },
                 title: {
                     display: true,
-                    text: 'Time'
+                    text: '時間'
                 }
             },
             y: {
                 beginAtZero: true,
                 title: {
                     display: true,
-                    text: 'Value'
+                    text: '値'
                 }
             }
         }
     }
-});
+};
+
+// 温度チャートの初期化
+const tempChart = new Chart(
+    document.getElementById('tempChart'),
+    {
+        ...chartConfig,
+        data: {
+            datasets: [{
+                label: '温度 (°C)',
+                data: [],
+                borderColor: 'rgb(255, 99, 132)',
+                tension: 0.1
+            }]
+        }
+    }
+);
+
+// 湿度チャートの初期化
+const humidityChart = new Chart(
+    document.getElementById('humidityChart'),
+    {
+        ...chartConfig,
+        data: {
+            datasets: [{
+                label: '湿度 (%)',
+                data: [],
+                borderColor: 'rgb(54, 162, 235)',
+                tension: 0.1
+            }]
+        }
+    }
+);
+
+// CO2チャートの初期化
+const co2Chart = new Chart(
+    document.getElementById('co2Chart'),
+    {
+        ...chartConfig,
+        data: {
+            datasets: [{
+                label: 'CO2 (ppm)',
+                data: [],
+                borderColor: 'rgb(75, 192, 192)',
+                tension: 0.1
+            }]
+        }
+    }
+);
 
 // 最新データの更新
 function updateLatestData(data) {
@@ -61,29 +86,37 @@ function updateLatestData(data) {
 // チャートデータの更新
 function updateChartData(data) {
     const timestamp = new Date(data.timestamp);
-    
-    chart.data.datasets[0].data.push({
+
+    // 温度データの更新
+    tempChart.data.datasets[0].data.push({
         x: timestamp,
         y: data.temperature
     });
-    chart.data.datasets[1].data.push({
+
+    // 湿度データの更新
+    humidityChart.data.datasets[0].data.push({
         x: timestamp,
         y: data.humidity
     });
-    chart.data.datasets[2].data.push({
+
+    // CO2データの更新
+    co2Chart.data.datasets[0].data.push({
         x: timestamp,
         y: data.co2
     });
 
     // データが多すぎる場合は古いデータを削除
     const maxDataPoints = 100;
-    if (chart.data.datasets[0].data.length > maxDataPoints) {
-        chart.data.datasets.forEach(dataset => {
-            dataset.data.shift();
-        });
+    if (tempChart.data.datasets[0].data.length > maxDataPoints) {
+        tempChart.data.datasets[0].data.shift();
+        humidityChart.data.datasets[0].data.shift();
+        co2Chart.data.datasets[0].data.shift();
     }
 
-    chart.update();
+    // チャートを更新
+    tempChart.update();
+    humidityChart.update();
+    co2Chart.update();
 }
 
 // データの取得と更新
@@ -103,30 +136,36 @@ async function fetchHistory() {
     try {
         const response = await fetch('/api/history');
         const data = await response.json();
-        
+
         // チャートデータをクリア
-        chart.data.datasets.forEach(dataset => {
-            dataset.data = [];
-        });
+        tempChart.data.datasets[0].data = [];
+        humidityChart.data.datasets[0].data = [];
+        co2Chart.data.datasets[0].data = [];
 
         // 履歴データを追加
         data.forEach(item => {
             const timestamp = new Date(item.timestamp);
-            chart.data.datasets[0].data.push({
+
+            tempChart.data.datasets[0].data.push({
                 x: timestamp,
                 y: item.temperature
             });
-            chart.data.datasets[1].data.push({
+
+            humidityChart.data.datasets[0].data.push({
                 x: timestamp,
                 y: item.humidity
             });
-            chart.data.datasets[2].data.push({
+
+            co2Chart.data.datasets[0].data.push({
                 x: timestamp,
                 y: item.co2
             });
         });
 
-        chart.update();
+        // チャートを更新
+        tempChart.update();
+        humidityChart.update();
+        co2Chart.update();
     } catch (error) {
         console.error('Error fetching history:', error);
     }
@@ -136,4 +175,4 @@ async function fetchHistory() {
 fetchHistory();
 
 // 定期的なデータ更新
-setInterval(fetchData, 2000); 
+setInterval(fetchData, 2000);
