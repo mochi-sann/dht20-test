@@ -116,7 +116,7 @@ function updateCharts(data) {
 }
 
 // WebSocket接続
-const ws = new WebSocket('ws://localhost:8765');
+const ws = new WebSocket('ws://raspberrypi1.local:8765');
 
 // WebSocketイベントハンドラ
 ws.onmessage = function(event) {
