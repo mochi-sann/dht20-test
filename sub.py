@@ -11,8 +11,14 @@ from flask import Flask, jsonify, send_from_directory
 import threading
 from queue import Queue
 import contextlib
+from prometheus_client import generate_latest, Counter, Gauge, CONTENT_TYPE_LATEST
 
 app = Flask(__name__)
+
+# Prometheus metrics
+temperature_gauge = Gauge('temperature_celsius', 'Temperature in Celsius')
+humidity_gauge = Gauge('humidity_percent', 'Humidity in percent')
+co2_gauge = Gauge('co2_ppm', 'CO2 in ppm')
 
 # データ保存用のキュー
 data_queue = Queue()
@@ -117,6 +123,10 @@ def get_history():
         } for row in rows]
         return jsonify(data)
 
+@app.route('/metrics')
+def metrics():
+    return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
+
 # センサーデータを読み取る関数
 def read_sensor_data():
     while True:
@@ -126,6 +136,11 @@ def read_sensor_data():
             humidity = sensor.relative_humidity
             co2_data = mh_z19.read(serial_console_untouched=True)
             co2 = co2_data['co2']
+
+            # Prometheusメトリクスを更新
+            temperature_gauge.set(temperature)
+            humidity_gauge.set(humidity)
+            co2_gauge.set(co2)
 
             # データをキューに追加
             data_queue.put({
