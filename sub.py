@@ -13,12 +13,44 @@ from queue import Queue
 import contextlib
 from prometheus_client import generate_latest, Counter, Gauge, CONTENT_TYPE_LATEST
 
+# InfluxDB client
+from influxdb_client import InfluxDBClient, Point, WriteOptions
+from influxdb_client.client.write_api import SYNCHRONOUS
+
 app = Flask(__name__)
 
 # Prometheus metrics
 temperature_gauge = Gauge('temperature_celsius', 'Temperature in Celsius')
 humidity_gauge = Gauge('humidity_percent', 'Humidity in percent')
 co2_gauge = Gauge('co2_ppm', 'CO2 in ppm')
+
+# InfluxDB Configuration
+INFLUXDB_URL = os.getenv('INFLUXDB_URL')
+INFLUXDB_TOKEN = os.getenv('INFLUXDB_TOKEN')
+INFLUXDB_ORG = os.getenv('INFLUXDB_ORG')
+INFLUXDB_BUCKET = os.getenv('INFLUXDB_BUCKET', 'sensor_data') # Default bucket name
+
+# Initialize InfluxDB Client
+influx_client = None
+write_api = None
+
+if INFLUXDB_URL and INFLUXDB_TOKEN and INFLUXDB_ORG:
+    try:
+        influx_client = InfluxDBClient(
+            url=INFLUXDB_URL,
+            token=INFLUXDB_TOKEN,
+            org=INFLUXDB_ORG
+        )
+        write_api = influx_client.write_api(write_options=SYNCHRONOUS)
+        print("InfluxDB client initialized successfully.")
+    except Exception as e:
+        print(f"Error initializing InfluxDB client: {e}")
+        influx_client = None
+        write_api = None
+else:
+    print("InfluxDB environment variables not fully set. Skipping InfluxDB initialization.")
+    print("Please set INFLUXDB_URL, INFLUXDB_TOKEN, and INFLUXDB_ORG.")
+
 
 # データ保存用のキュー
 data_queue = Queue()
@@ -142,12 +174,26 @@ def read_sensor_data():
             humidity_gauge.set(humidity)
             co2_gauge.set(co2)
 
-            # データをキューに追加
+            # データをキューに追加 (SQLite用)
             data_queue.put({
                 'temperature': temperature,
                 'humidity': humidity,
                 'co2': co2
             })
+
+            # InfluxDBにデータを書き込む
+            if write_api:
+                try:
+                    point = Point("sensor_data") \
+                        .tag("location", "home") \
+                        .field("temperature", temperature) \
+                        .field("humidity", humidity) \
+                        .field("co2", co2) \
+                        .time(datetime.utcnow())
+                    write_api.write(bucket=INFLUXDB_BUCKET, record=point)
+                    print("Data written to InfluxDB.")
+                except Exception as e:
+                    print(f"Error writing to InfluxDB: {e}")
 
             # コンソールに出力
             print(f"Temperature: {temperature:.2f} °C")
@@ -221,6 +267,8 @@ except KeyboardInterrupt:
     # データベースワーカーの終了
     data_queue.put(None)
     data_queue.join()
+    if influx_client:
+        influx_client.close() # Close InfluxDB client connection
 except Exception as e:
     print(f"Fatal error: {e}")
     print("Troubleshooting tips:")
@@ -231,3 +279,6 @@ except Exception as e:
     # データベースワーカーの終了
     data_queue.put(None)
     data_queue.join()
+    if influx_client:
+        influx_client.close() # Close InfluxDB client connection
+
