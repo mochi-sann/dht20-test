@@ -1,0 +1,16 @@
+[Unit]
+Description=Sensor Data Logger and Visualizer
+After=network.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/sensor_project  # Adjust this path to your project directory
+ExecStart=/usr/bin/python3 /home/pi/sensor_project/sub.py # Adjust this path to your sub.py
+Restart=always
+Environment="INFLUXDB_URL=YOUR_INFLUXDB_URL"
+Environment="INFLUXDB_TOKEN=YOUR_INFLUXDB_TOKEN"
+Environment="INFLUXDB_ORG=YOUR_INFLUXDB_ORG_ID"
+Environment="INFLUXDB_BUCKET=YOUR_INFLUXDB_BUCKET_NAME"
+
+[Install]
+WantedBy=multi-user.target
