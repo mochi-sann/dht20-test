@@ -1,124 +1,124 @@
-# Sensor Data Logger and Visualizer
+# センサーデータロガーとビジュアライザー
 
-This project reads data from AHT20 (temperature/humidity) and MH-Z19B (CO2) sensors, logs it to a local SQLite database, exposes it via a Flask API, provides Prometheus metrics, and sends it to Grafana Cloud's InfluxDB for remote monitoring.
+このプロジェクトは、AHT20（温度/湿度）およびMH-Z19B（CO2）センサーからデータを読み取り、ローカルのSQLiteデータベースに記録し、Flask APIを介して公開し、Prometheusメトリクスを提供し、リモート監視のためにGrafana CloudのInfluxDBに送信します。
 
-## Table of Contents
+## 目次
 
-- [Prerequisites](#prerequisites)
-- [Hardware Setup](#hardware-setup)
-- [Software Setup](#software-setup)
-- [Grafana Cloud / InfluxDB Setup](#grafana-cloud--influxdb-setup)
-- [Running the Application](#running-the-application)
-- [Viewing Data in Grafana](#viewing-data-in-grafana)
+- [前提条件](#前提条件)
+- [ハードウェアのセットアップ](#ハードウェアのセットアップ)
+- [ソフトウェアのセットアップ](#ソフトウェアのセットアップ)
+- [Grafana Cloud / InfluxDBのセットアップ](#grafana-cloud--influxdbのセットアップ)
+- [アプリケーションの実行](#アプリケーションの実行)
+- [Grafanaでのデータ表示](#grafanaでのデータ表示)
 
-## Prerequisites
+## 前提条件
 
-Before you begin, ensure you have the following:
+始める前に、以下のものがあることを確認してください。
 
-*   **Raspberry Pi** (or similar single-board computer) with Raspbian OS installed.
-*   **AHT20 Temperature/Humidity Sensor**
-*   **MH-Z19B CO2 Sensor**
-*   **Jumper Wires**
-*   **Internet Connection** for the Raspberry Pi.
-*   **Grafana Cloud Account** (free tier is sufficient for testing).
+*   **Raspberry Pi**（または同様のシングルボードコンピューター）とRaspbian OSがインストールされていること。
+*   **AHT20 温度/湿度センサー**
+*   **MH-Z19B CO2センサー**
+*   **ジャンパーワイヤー**
+*   Raspberry Piの**インターネット接続**。
+*   **Grafana Cloudアカウント**（無料枠で十分です）。
 
-## Hardware Setup
+## ハードウェアのセットアップ
 
-Connect your sensors to the Raspberry Pi's GPIO pins.
+センサーをRaspberry PiのGPIOピンに接続します。
 
-### AHT20 Sensor (I2C)
+### AHT20センサー (I2C)
 
-The AHT20 sensor uses the I2C protocol. Connect it as follows:
+AHT20センサーはI2Cプロトコルを使用します。次のように接続します。
 
-*   **VCC**: To Raspberry Pi's 3.3V or 5V pin (check your AHT20 module's voltage compatibility).
-*   **GND**: To Raspberry Pi's GND pin.
-*   **SDA**: To Raspberry Pi's SDA (GPIO2) pin.
-*   **SCL**: To Raspberry Pi's SCL (GPIO3) pin.
+*   **VCC**: Raspberry Piの3.3Vまたは5Vピンへ（AHT20モジュールの電圧互換性を確認してください）。
+*   **GND**: Raspberry PiのGNDピンへ。
+*   **SDA**: Raspberry PiのSDA（GPIO2）ピンへ。
+*   **SCL**: Raspberry PiのSCL（GPIO3）ピンへ。
 
-### MH-Z19B CO2 Sensor (UART)
+### MH-Z19B CO2センサー (UART)
 
-The MH-Z19B sensor uses UART (serial communication). Connect it as follows:
+MH-Z19BセンサーはUART（シリアル通信）を使用します。次のように接続します。
 
-*   **Vin**: To Raspberry Pi's 5V pin.
-*   **GND**: To Raspberry Pi's GND pin.
-*   **RxD**: To Raspberry Pi's TxD (GPIO14) pin.
-*   **TxD**: To Raspberry Pi's RxD (GPIO15) pin.
+*   **Vin**: Raspberry Piの5Vピンへ。
+*   **GND**: Raspberry PiのGNDピンへ。
+*   **RxD**: Raspberry PiのTxD（GPIO14）ピンへ。
+*   **TxD**: Raspberry PiのRxD（GPIO15）ピンへ。
 
-**Important for MH-Z19B**: You might need to disable the serial console on your Raspberry Pi to free up the UART pins for the sensor.
-You can do this via `sudo raspi-config` -> `Interface Options` -> `Serial Port` -> `Would you like a login shell to be accessible over serial?` -> `No` -> `Would you like the serial port hardware to be enabled?` -> `Yes`.
+**MH-Z19Bに関する重要事項**: センサーのためにUARTピンを解放するには、Raspberry Piのシリアルコンソールを無効にする必要があるかもしれません。
+これは、`sudo raspi-config` -> `Interface Options` -> `Serial Port` -> `Would you like a login shell to be accessible over serial?` -> `No` -> `Would you like the serial port hardware to be enabled?` -> `Yes` で行えます。
 
-## Software Setup
+## ソフトウェアのセットアップ
 
-1.  **Enable I2C and UART**:
-    Ensure I2C and UART are enabled on your Raspberry Pi. You can do this using `sudo raspi-config` -> `Interface Options`.
+1.  **I2CとUARTの有効化**:
+    Raspberry PiでI2CとUARTが有効になっていることを確認してください。これは`sudo raspi-config` -> `Interface Options`を使用して行えます。
 
-2.  **Update and Upgrade**:
+2.  **更新とアップグレード**:
     ```bash
     sudo apt update
     sudo apt upgrade -y
     ```
 
-3.  **Install Python and pip**:
+3.  **Pythonとpipのインストール**:
     ```bash
     sudo apt install python3 python3-pip -y
     ```
 
-4.  **Install Project Dependencies**:
-    Navigate to your project directory and install the required Python libraries.
+4.  **プロジェクトの依存関係のインストール**:
+    プロジェクトディレクトリに移動し、必要なPythonライブラリをインストールします。
     ```bash
     pip3 install -r requirements.txt
     ```
 
-## Grafana Cloud / InfluxDB Setup
+## Grafana Cloud / InfluxDBのセットアップ
 
-To send data to Grafana Cloud, you need to obtain your InfluxDB credentials.
+Grafana Cloudにデータを送信するには、InfluxDBの認証情報を取得する必要があります。
 
-1.  **Log in to Grafana Cloud**: Go to [grafana.com/cloud](https://grafana.com/cloud) and log in to your account.
-2.  **Navigate to InfluxDB**: In the Grafana Cloud portal, find the "InfluxDB" section (usually under "Data Sources" or "Integrations").
-3.  **Get Connection Details**:
-    *   **URL**: Look for the InfluxDB URL (e.g., `https://<your-stack-slug>.influxdata.io`).
-    *   **Organization ID**: This will be a string of characters.
-    *   **Bucket**: You can use the default `default` bucket or create a new one.
-4.  **Generate an API Token**:
-    *   Go to "API Tokens" within the InfluxDB section.
-    *   Create a new API Token. Ensure it has **write permissions** for the bucket you intend to use. Copy this token immediately as it won't be shown again.
+1.  **Grafana Cloudにログイン**: [grafana.com/cloud](https://grafana.com/cloud) にアクセスし、アカウントにログインします。
+2.  **InfluxDBへ移動**: Grafana Cloudポータルで、「InfluxDB」セクションを見つけます（通常、「Data Sources」または「Integrations」の下にあります）。
+3.  **接続詳細の取得**:
+    *   **URL**: InfluxDBのURLを探します（例: `https://<your-stack-slug>.influxdata.io`）。
+    *   **Organization ID**: これは文字列です。
+    *   **Bucket**: デフォルトの`default`バケットを使用するか、新しいバケットを作成できます。
+4.  **APIトークンの生成**:
+    *   InfluxDBセクション内の「API Tokens」に移動します。
+    *   新しいAPIトークンを作成します。使用するバケットへの**書き込み権限**があることを確認してください。このトークンは二度と表示されないため、すぐにコピーしてください。
 
-## Running the Application
+## アプリケーションの実行
 
-1.  **Set Environment Variables**:
-    Before running `sub.py`, you must set the InfluxDB environment variables with the credentials you obtained from Grafana Cloud.
-    Replace the placeholder values with your actual credentials.
+1.  **環境変数の設定**:
+    `sub.py`を実行する前に、Grafana Cloudから取得した認証情報でInfluxDBの環境変数を設定する必要があります。
+    プレースホルダーの値を実際の認証情報に置き換えてください。
 
     ```bash
     export INFLUXDB_URL="YOUR_INFLUXDB_URL"
     export INFLUXDB_TOKEN="YOUR_INFLUXDB_TOKEN"
     export INFLUXDB_ORG="YOUR_INFLUXDB_ORG_ID"
-    export INFLUXDB_BUCKET="YOUR_INFLUXDB_BUCKET_NAME" # e.g., "default" or "sensor_data"
+    export INFLUXDB_BUCKET="YOUR_INFLUXDB_BUCKET_NAME" # 例: "default" または "sensor_data"
     ```
-    It's recommended to add these `export` commands to your `~/.bashrc` or `~/.profile` file if you want them to persist across sessions. After editing, run `source ~/.bashrc` (or `source ~/.profile`).
+    これらの`export`コマンドを`~/.bashrc`または`~/.profile`ファイルに追加すると、セッション間で永続化されるため推奨されます。編集後、`source ~/.bashrc`（または`source ~/.profile`）を実行してください。
 
-2.  **Run `sub.py`**:
+2.  **`sub.py`の実行**:
     ```bash
     python3 sub.py
     ```
-    You should see output indicating sensor readings and "Data written to InfluxDB." messages.
+    センサーの読み取りと「Data written to InfluxDB.」メッセージを示す出力が表示されるはずです。
 
-## Viewing Data in Grafana
+## Grafanaでのデータ表示
 
-1.  **Add InfluxDB Data Source in Grafana**:
-    *   Log in to your Grafana Cloud instance.
-    *   Go to `Connections` -> `Data sources` -> `Add new data source`.
-    *   Search for `InfluxDB`.
-    *   Configure it with the same URL, Token, Organization, and Bucket you used for the environment variables.
-    *   Set the `Query Language` to `Flux`.
-    *   Save and Test.
+1.  **GrafanaでInfluxDBデータソースを追加**:
+    *   Grafana Cloudインスタンスにログインします。
+    *   `Connections` -> `Data sources` -> `Add new data source` に移動します。
+    *   `InfluxDB`を検索します。
+    *   環境変数に使用したのと同じURL、トークン、組織、バケットで設定します。
+    *   `Query Language`を`Flux`に設定します。
+    *   保存してテストします。
 
-2.  **Create a Grafana Dashboard**:
-    *   Go to `Dashboards` -> `New Dashboard` -> `Add new panel`.
-    *   Select your InfluxDB data source.
-    *   Use Flux queries to visualize your sensor data. Here are example queries:
+2.  **Grafanaダッシュボードの作成**:
+    *   `Dashboards` -> `New Dashboard` -> `Add new panel` に移動します。
+    *   InfluxDBデータソースを選択します。
+    *   Fluxクエリを使用してセンサーデータを視覚化します。以下にクエリの例を示します。
 
-    **Temperature Panel (Gauge or Graph)**:
+    **温度パネル (ゲージまたはグラフ)**:
     ```flux
     from(bucket: "YOUR_INFLUXDB_BUCKET_NAME")
       |> range(start: v.timeRangeStart, stop: v.timeRangeStop)
@@ -127,7 +127,7 @@ To send data to Grafana Cloud, you need to obtain your InfluxDB credentials.
       |> yield(name: "mean_temperature")
     ```
 
-    **Humidity Panel (Gauge or Graph)**:
+    **湿度パネル (ゲージまたはグラフ)**:
     ```flux
     from(bucket: "YOUR_INFLUXDB_BUCKET_NAME")
       |> range(start: v.timeRangeStart, stop: v.timeRangeStop)
@@ -136,7 +136,7 @@ To send data to Grafana Cloud, you need to obtain your InfluxDB credentials.
       |> yield(name: "mean_humidity")
     ```
 
-    **CO2 Panel (Gauge or Graph)**:
+    **CO2パネル (ゲージまたはグラフ)**:
     ```flux
     from(bucket: "YOUR_INFLUXDB_BUCKET_NAME")
       |> range(start: v.timeRangeStart, stop: v.timeRangeStop)
@@ -144,4 +144,4 @@ To send data to Grafana Cloud, you need to obtain your InfluxDB credentials.
       |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)
       |> yield(name: "mean_co2")
     ```
-    Remember to replace `YOUR_INFLUXDB_BUCKET_NAME` with your actual bucket name.
+    `YOUR_INFLUXDB_BUCKET_NAME`を実際のバケット名に置き換えることを忘れないでください。
