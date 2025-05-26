@@ -17,6 +17,10 @@ from prometheus_client import generate_latest, Counter, Gauge, CONTENT_TYPE_LATE
 from influxdb_client import InfluxDBClient, Point, WriteOptions
 from influxdb_client.client.write_api import SYNCHRONOUS
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 app = Flask(__name__)
 
 # Prometheus metrics
